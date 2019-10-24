@@ -20,9 +20,10 @@ This script provides functionality to scrape all the PDF links from the site
 http://orgsyn.org/ and download the PDF files.
 """
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import requests
 from typing import List
+import urllib.parse
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
@@ -70,6 +71,19 @@ class OrgSynScrapper(object):
         if input_el:
             return input_el['value']
         return None
+
+    @staticmethod
+    def pdfLinkFilter(tag : Tag):
+        """Filter for a BeautifulSoup instance for tags with a link to a pdf
+        file in a folder named `Content`
+
+        :param tag: The tag to check for a pdf link
+
+        :returns: True if the tag links to a pdf file in a folder named Content
+        else False
+        """
+        return (tag.has_attr("href") and tag["href"].startswith("Content")
+            and tag["href"].endswith(".pdf"))
 
     def requestVolumes(self) -> List[str]:
         """Requests all annual volumes and sets the viewstate,
@@ -165,6 +179,53 @@ class OrgSynScrapper(object):
         ]
 
         return list(filtered_pages)
+
+    def requestVolumePagePdfLinks(self, volume : str, page : str) -> List[str]:
+        """Request all pdf links for a page of a volume.
+
+        :param volume: The volume
+        :param page: The page of the volume to request the pdf links for
+
+        :return: A list with all the pdf links as strings
+        """
+        body = {
+            "ctl00$QuickSearchAnnVolList1": volume,
+            "ctl00$PageTextBoxDrop": page,
+            "ctl00$tab2_TextBox": "",
+            "ctl00$TBWE3_ClientState": "",
+            "ctl00$SrcType": "Anywhere",
+            "ctl00$MainContent$QSAnnVol": "Select Ann. Volume",
+            "ctl00$MainContent$QSCollVol": "Select Coll. Volume",
+            "ctl00$MainContent$searchplace": "publicationRadio",
+            "ctl00$MainContent$TextQuickSearch": "",
+            "ctl00$MainContent$TBWE2_ClientState": "",
+            "ctl00$MainContent$SearchStructure": "",
+            "ctl00$MainContent$SearchStructureMol": "",
+            "ctl00$HidSrcType": "Citation",
+            "ctl00$WarningAccepted": "1",
+            "ctl00$Direction": "",
+            "__LASTFOCUS": "",
+            "__EVENTTARGET": "QuickSearchVolSrc",
+            "__EVENTARGUMENT": "submitsearch",
+            "__VIEWSTATE": self.viewstate,
+            "__VIEWSTATEGENERATOR": self.viewstategenerator,
+            "__EVENTVALIDATION": self.eventvalidation,
+        }
+
+        response = self.session.post(
+            OrgSynScrapper.URL,
+            data=body,
+            cookies={"quickSearchTab" : "0"}
+        )
+        soup = BeautifulSoup(response.content, "html.parser")
+        link_tags = soup.find_all(OrgSynScrapper.pdfLinkFilter)
+
+        links = map(
+            lambda tag: urllib.parse.urljoin(OrgSynScrapper.URL, tag["href"]),
+            link_tags
+        )
+
+        return list(links)
 
 if __name__ == "__main__":
     with OrgSynScrapper() as scrapper:
