@@ -26,6 +26,10 @@ from typing import List
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
+    PAGES_RESPONSE_OPTIONS_INDEX = 11
+    PAGES_RESPONSE_VIEWSTATE_INDEX = 51
+    PAGES_RESPONSE_VIEWSTATEGENERATOR_INDEX = 55
+    PAGES_RESPONSE_EVENTVALIDATION_INDEX = 59
     URL = "http://orgsyn.org"
     USER_AGENT = "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"
 
@@ -91,14 +95,76 @@ class OrgSynScrapper(object):
             {"id" : OrgSynScrapper.ANNUAL_VOLUME_SELECT_ID}
         )
 
-        annualVolumes = []
+        annualVolumes = map(
+            lambda option: option["value"],
+            annualVolSelect.findAll("option")
+        )
 
-        for option in annualVolSelect.findAll("option"):
-            value = option["value"]
-            if value:
-                annualVolumes.append(value)
+        filtered_volumes = filter(
+            lambda volume: volume,
+            annualVolumes
+        )
 
-        return annualVolumes
+        return list(filtered_volumes)
+
+    def requestPagesOfVolume(self, volume: str) -> List[str]:
+        """Requests all pages of an annual volume.
+
+        :param volume: The volume to request the pages for
+
+        :return: A list with all the pages of the volume as strings
+        """
+        body = {
+            "ctl00$ScriptManager1": "ctl00$UpdatePanel1|ctl00$QuickSearchAnnVolList1",
+            "ctl00$QuickSearchAnnVolList1" : volume,
+            "ctl00$tab2_TextBox": "",
+            "ctl00$TBWE3_ClientState": "",
+            "ctl00$SrcType": "Anywhere",
+            "ctl00$MainContent$QSAnnVol": "Select Ann. Volume",
+            "ctl00$MainContent$QSCollVol": "Select Coll. Volume",
+            "ctl00$MainContent$searchplace": "publicationRadio",
+            "ctl00$MainContent$TextQuickSearch": "",
+            "ctl00$MainContent$TBWE2_ClientState": "",
+            "ctl00$MainContent$SearchStructure": "",
+            "ctl00$MainContent$SearchStructureMol": "",
+            "ctl00$HidSrcType": "",
+            "ctl00$WarningAccepted": "0",
+            "ctl00$Direction": "",
+            "__LASTFOCUS": "",
+            "__EVENTTARGET": "ctl00$QuickSearchAnnVolList1",
+            "__EVENTARGUMENT": "",
+            "__ASYNCPOST": "true",
+            "__VIEWSTATE": self.viewstate,
+            "__VIEWSTATEGENERATOR": self.viewstategenerator,
+            "__EVENTVALIDATION": self.eventvalidation,
+        }
+
+        response = self.session.post(OrgSynScrapper.URL, data=body)
+        content = str(response.content)
+        options_html = str(response.content).split("|")[
+            OrgSynScrapper.PAGES_RESPONSE_OPTIONS_INDEX
+        ]
+        optionsSoup = BeautifulSoup(options_html, "html.parser")
+        pages = map(
+            lambda option: option["value"],
+            optionsSoup.findAll("option")
+        )
+        filtered_pages = filter(
+            lambda page: page,
+            pages
+        )
+
+        self.viewstate = str(response.content).split("|")[
+            OrgSynScrapper.PAGES_RESPONSE_VIEWSTATE_INDEX
+        ]
+        self.viewstategenerator = str(response.content).split("|")[
+            OrgSynScrapper.PAGES_RESPONSE_VIEWSTATEGENERATOR_INDEX
+        ]
+        self.eventvalidation = str(response.content).split("|")[
+            OrgSynScrapper.PAGES_RESPONSE_EVENTVALIDATION_INDEX
+        ]
+
+        return list(filtered_pages)
 
 if __name__ == "__main__":
     with OrgSynScrapper() as scrapper:
