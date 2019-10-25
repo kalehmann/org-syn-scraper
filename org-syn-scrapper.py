@@ -281,6 +281,34 @@ class OrgSynScrapper(object):
             links
         ))
 
+    @classmethod
+    def doLoadVolumePagesPdfLinks(
+        cls, volume : str, pages : List[str]
+    ) -> List[PdfDescription]:
+        """Get the pdf links for a given set of pages. Does the full procedure
+        without the need for any preceeding method calls for the viewstate etc.
+
+        :param volume: The volume of the pages
+        :para pages: The pages of the volume to analyze for links
+
+        :return: A list with PdfDescription instances describing the files
+        """
+        links = []
+
+        with cls() as scrapper:
+            volumes = scrapper.requestVolumes()
+            if volume not in volumes:
+                raise Exception(f"The volume {volume} does not exist")
+            volume_pages = scrapper.requestPagesOfVolume(volume)
+            for page in pages:
+                if page not in volume_pages:
+                    raise Exception(
+                        f"The page {page} does not exist in volume {volume}"
+                    )
+                links += scrapper.requestVolumePagePdfLinks(volume, page)
+
+        return links
+
     def requestVolumePdfLinks(self, volume : str) -> List[PdfDescription]:
         """Requests the pdf links of all pages in a given volume.
 
