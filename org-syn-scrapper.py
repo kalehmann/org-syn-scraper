@@ -21,9 +21,27 @@ http://orgsyn.org/ and download the PDF files.
 """
 
 from bs4 import BeautifulSoup, Tag
+import json
+from pathlib import Path
 import requests
 from typing import List
 import urllib.parse
+
+class PdfDescription(object):
+    """Describes a PDF file on the server with the name of the file and a link
+    to it.
+    """
+    def __init__(self, name, url):
+        self.name = name
+        self.url = url
+
+    def __repr__(self):
+        data = {
+          "name" : self.name,
+          "url" : self.url,
+        }
+
+        return json.dumps(data, indent=2)
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
@@ -180,13 +198,15 @@ class OrgSynScrapper(object):
 
         return list(filtered_pages)
 
-    def requestVolumePagePdfLinks(self, volume : str, page : str) -> List[str]:
+    def requestVolumePagePdfLinks(
+        self, volume : str, page : str
+    ) -> List[PdfDescription]:
         """Request all pdf links for a page of a volume.
 
         :param volume: The volume
         :param page: The page of the volume to request the pdf links for
 
-        :return: A list with all the pdf links as strings
+        :return: A list with PdfDescription instances describing the files
         """
         body = {
             "ctl00$QuickSearchAnnVolList1": volume,
@@ -222,17 +242,35 @@ class OrgSynScrapper(object):
         if url.endswith(".pdf"):
             # Check if the Server already redirected us to the PDF file.
             # This happens for example with volume 88 page 1.
-            return [url]
+            return [PdfDescription(Path(url).stem, url)]
 
         soup = BeautifulSoup(response.content, "html.parser")
         link_tags = soup.find_all(OrgSynScrapper.pdfLinkFilter)
-
-        links = map(
+        links = list(map(
             lambda tag: urllib.parse.urljoin(OrgSynScrapper.URL, tag["href"]),
             link_tags
-        )
+        ))
 
-        return list(links)
+        procedure_body = soup.find(
+            "div",
+            { "id" : "ctl00_MainContent_procedureBody" }
+        )
+        title_tags = procedure_body.findAll("div", { "class" : "title" })
+        titles = list(map(
+            lambda tag: tag.text.strip(),
+            title_tags
+        ))
+
+        if len(titles) == len(links):
+            return list(map(
+                lambda title_url: PdfDescription(*title_url),
+                zip(titles, links)
+            ))
+
+        return list(map(
+            lambda url: PdfDescription(Path(url).stem, url),
+            links
+        ))
 
 if __name__ == "__main__":
     with OrgSynScrapper() as scrapper:
