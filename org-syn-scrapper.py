@@ -22,10 +22,12 @@ http://orgsyn.org/ and download the PDF files.
 
 from bs4 import BeautifulSoup, Tag
 import json
+import multiprocessing
+import numpy
 from pathlib import Path
 import re
 import requests
-from typing import List
+from typing import List, Tuple
 import urllib.parse
 
 class PdfDescription(object):
@@ -51,6 +53,20 @@ class PdfDescription(object):
         }
 
         return json.dumps(data, indent=2)
+
+def volume_page_pdf_link_wrapper(
+    data : Tuple[str, List[str]]
+) -> List[PdfDescription]:
+    """Wrapper for the doLoadVolumePagesPdfLinks class method of the
+    OrgSynScrapper class. This function takes the doLoadVolumePagesPdfLinks
+    methods arguments as a list and unpacks them. It is used as function
+    for the map method of the multiprocessing.Pool class.
+
+    :param data: a tuple with the doLoadVolumePagesPdfLinks arguments
+
+    :return: A list with PdfDescription instances describing the files
+    """
+    return OrgSynScrapper.doLoadVolumePagesPdfLinks(*data)
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
@@ -306,6 +322,39 @@ class OrgSynScrapper(object):
                         f"The page {page} does not exist in volume {volume}"
                     )
                 links += scrapper.requestVolumePagePdfLinks(volume, page)
+
+        return links
+
+    @classmethod
+    def doLoadVolumePdfLinksParallel(
+        cls, volume : str, number_of_processes : int = 4
+    ) -> List[PdfDescription]:
+        """Performs the requests for the pdf links of a volume parallel.
+
+        :param volume: The volume to get the pdf links for
+        :param number_of_processes: The number of parallel processes that
+                                    request the links
+
+        :return: A list with PdfDescription instances describing the files
+        """
+        links = []
+
+        with cls() as scrapper:
+            volumes = scrapper.requestVolumes()
+            if volume not in volumes:
+                raise Exception(f"The volume {volume} does not exist")
+            pages = scrapper.requestPagesOfVolume(volume)
+
+        page_chunks = numpy.array_split(pages, number_of_processes)
+
+        with multiprocessing.Pool(processes=number_of_processes) as pool:
+            result = pool.map(
+                volume_page_pdf_link_wrapper,
+                zip([volume] * number_of_processes, page_chunks)
+            )
+
+        for i in result:
+            links += i
 
         return links
 
