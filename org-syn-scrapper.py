@@ -217,6 +217,13 @@ class OrgSynScrapper(object):
             data=body,
             cookies={"quickSearchTab" : "0"}
         )
+
+        url = response.url
+        if url.endswith(".pdf"):
+            # Check if the Server already redirected us to the PDF file.
+            # This happens for example with volume 88 page 1.
+            return [url]
+
         soup = BeautifulSoup(response.content, "html.parser")
         link_tags = soup.find_all(OrgSynScrapper.pdfLinkFilter)
 
