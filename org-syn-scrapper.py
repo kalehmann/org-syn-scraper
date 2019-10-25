@@ -23,6 +23,7 @@ http://orgsyn.org/ and download the PDF files.
 from bs4 import BeautifulSoup, Tag
 import json
 from pathlib import Path
+import re
 import requests
 from typing import List
 import urllib.parse
@@ -34,6 +35,14 @@ class PdfDescription(object):
     def __init__(self, name, url):
         self.name = name
         self.url = url
+
+    @property
+    def slug(self):
+        # See https://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename
+        # See https://github.com/django/django/blob/master/django/utils/text.py
+        s = str(self.name).strip().replace(' ', '_')
+
+        return re.sub(r'(?u)[^-\w.]', '', s)
 
     def __repr__(self):
         data = {
@@ -287,6 +296,34 @@ class OrgSynScrapper(object):
             links += self.requestVolumePagePdfLinks(volume, page)
 
         return links
+
+    @staticmethod
+    def generateLinkJson(links : List[PdfDescription]) -> str:
+        """Generates a json string with the scheme
+        ```
+        [
+            {
+                "name": "string",
+                "slug": "string",
+                "url": "string"
+            }
+        ]
+        ```
+
+        :param links: A list of PdfDescription instances
+
+        :returns: The json string
+        """
+        data = map(
+            lambda description: {
+                "name": description.name,
+                "slug": description.slug,
+                "url": description.url
+            },
+            links
+        )
+
+        return json.dumps(list(data), indent=2)
 
 if __name__ == "__main__":
     with OrgSynScrapper() as scrapper:
