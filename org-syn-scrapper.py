@@ -272,6 +272,22 @@ class OrgSynScrapper(object):
             links
         ))
 
+    def requestVolumePdfLinks(self, volume : str) -> List[PdfDescription]:
+        """Requests the pdf links of all pages in a given volume.
+
+        :param volume: the volume to get the pdf links for
+
+        :return: A list with PdfDescription instances describing the files
+        """
+        pages = self.requestPagesOfVolume(volume)
+
+        links = []
+
+        for page in pages:
+            links += self.requestVolumePagePdfLinks(volume, page)
+
+        return links
+
 if __name__ == "__main__":
     with OrgSynScrapper() as scrapper:
         pass
