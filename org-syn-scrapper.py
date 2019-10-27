@@ -20,6 +20,7 @@ This script provides functionality to scrape all the PDF links from the site
 http://orgsyn.org/ and download the PDF files.
 """
 
+import argparse
 from bs4 import BeautifulSoup, Tag
 import json
 import multiprocessing
@@ -29,6 +30,78 @@ import re
 import requests
 from typing import List, Tuple
 import urllib.parse
+
+class ScrapperParser(object):
+    """Parser of command line arguments for the OrgSynScrapper."""
+    def __init__(self):
+        self.parser = argparse.ArgumentParser(
+            description="Scrape pdf links from http://orgsyn.org"
+        )
+        subparsers = self.parser.add_subparsers(
+            dest="command",
+            description="The following operation modes are available:"
+        )
+        subparsers.required = True
+
+        dump_links = subparsers.add_parser(
+            "dump_links",
+            description="Dumps the PDF links from all or a single volume"
+        )
+        dump_links.add_argument(
+            "--volume",
+            dest="volume",
+            help="The optional number of the annual volume to scrape for pdf links",
+            required=False,
+        )
+        dump_links.add_argument(
+            "--links-only",
+            action="store_true",
+            dest="links_only",
+            help="Print only the links",
+            required=False,
+        )
+        dump_links.add_argument(
+            "--processes",
+            default=4,
+            dest="processes",
+            help="The number of parallel processes",
+            required=False,
+            type=int
+        )
+        dump_links.set_defaults(func=self.dump_links)
+
+    def dump_links(self, args):
+        """Dumps the links of all pdf files in a volume or all volumes as json
+        or plain text.
+
+        :param args: The command line arguments for the dump_links function
+        """
+        annualVolumes = [args.volume]
+        pdfDescriptions = []
+        if args.volume is None:
+            with OrgSynScrapper() as scrapper:
+                annualVolumes = scrapper.requestVolumes()
+
+        for volume in annualVolumes:
+            pdfDescriptions += OrgSynScrapper.doLoadVolumePdfLinksParallel(
+                volume,
+                number_of_processes=args.processes
+            )
+
+        if args.links_only:
+            for description in pdfDescriptions:
+                print(description.url)
+            return
+
+        print(OrgSynScrapper.generateLinkJson(pdfDescriptions))
+
+    def parse_args(self, *args, **kwargs):
+        """Just a passtrough to the parse_args method of the ArgumentParser
+        instance.
+
+        See https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_args
+        """
+        return self.parser.parse_args(*args, **kwargs)
 
 class PdfDescription(object):
     """Describes a PDF file on the server with the name of the file and a link
@@ -403,5 +476,6 @@ class OrgSynScrapper(object):
         return json.dumps(list(data), indent=2)
 
 if __name__ == "__main__":
-    with OrgSynScrapper() as scrapper:
-        pass
+    parser = ScrapperParser()
+    args = parser.parse_args()
+    args.func(args)
