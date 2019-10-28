@@ -349,11 +349,21 @@ class OrgSynScrapper(object):
             link_tags
         ))
 
-        procedure_body = soup.find(
-            "div",
-            { "id" : "ctl00_MainContent_procedureBody" }
-        )
-        title_tags = procedure_body.findAll("div", { "class" : "title" })
+        title_tags = soup.select("#ctl00_MainContent_procedureBody > .title")
+
+        if len(link_tags) == 0:
+            # Maybe the page has a different layout like page 121 of volume 49
+            # with two pdf files.
+            id_tags = soup.find_all("div", {"class" : "collapsibleContainer" })
+            links = list(map(
+                lambda tag: urllib.parse.urljoin(
+                    OrgSynScrapper.URL,
+                    f"Content/pdfs/procedures/{tag['id']}.pdf"
+                ),
+                id_tags
+            ))
+            title_tags = soup.findAll("div", { "class" : "procTitle" })
+
         titles = list(map(
             lambda tag: tag.text.strip(),
             title_tags
