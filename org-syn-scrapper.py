@@ -88,6 +88,8 @@ class ScrapperParser(object):
                 number_of_processes=args.processes
             )
 
+        pdfDescriptions = OrgSynScrapper.deduplicateLinks(pdfDescriptions)
+
         if args.links_only:
             for description in pdfDescriptions:
                 print(description.url)
@@ -108,6 +110,7 @@ class PdfDescription(object):
     to it.
     """
     def __init__(self, annualVolume : str, page : str, name : str, url : str):
+        self.aliases = []
         self.annualVolume = annualVolume
         self.name = name
         self.page = page
@@ -123,6 +126,7 @@ class PdfDescription(object):
 
     def __repr__(self):
         data = {
+          "aliases" : self.aliases,
           "annualVolume" : self.annualVolume,
           "name" : self.name,
           "page" : self.page,
@@ -463,6 +467,30 @@ class OrgSynScrapper(object):
         return links
 
     @staticmethod
+    def deduplicateLinks(links : List[PdfDescription]) -> List[PdfDescription]:
+        """Removes duplicate links from a list of pdf descriptions.
+
+        :params links: The list of pdf descriptions to deduplicate
+
+        :return: A deduplicated list of pdf descriptions
+        """
+        deduplicated_descriptions = []
+
+        for description in links:
+            for dedup_descs in deduplicated_descriptions:
+                if dedup_descs.url == description.url:
+                    if dedup_descs.name == description.name:
+                        break
+                    if description.name in dedup_descs.aliases:
+                        break
+                    dedup_descs.aliases.append(description.name)
+                    break
+            else:
+                deduplicated_descriptions.append(description)
+
+        return deduplicated_descriptions
+
+    @staticmethod
     def generateLinkJson(links : List[PdfDescription]) -> str:
         """Generates a json string with the scheme
         ```
@@ -486,6 +514,7 @@ class OrgSynScrapper(object):
                 "annualVolume" : description.annualVolume,
                 "page" : description.page,
                 "name": description.name,
+                "aliases" : description.aliases,
                 "slug": description.slug,
                 "url": description.url
             },
