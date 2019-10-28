@@ -107,8 +107,10 @@ class PdfDescription(object):
     """Describes a PDF file on the server with the name of the file and a link
     to it.
     """
-    def __init__(self, name, url):
+    def __init__(self, annualVolume : str, page : str, name : str, url : str):
+        self.annualVolume = annualVolume
         self.name = name
+        self.page = page
         self.url = url
 
     @property
@@ -121,7 +123,10 @@ class PdfDescription(object):
 
     def __repr__(self):
         data = {
+          "annualVolume" : self.annualVolume,
           "name" : self.name,
+          "page" : self.page,
+          "slug" : self.slug,
           "url" : self.url,
         }
 
@@ -340,7 +345,7 @@ class OrgSynScrapper(object):
         if url.endswith(".pdf"):
             # Check if the Server already redirected us to the PDF file.
             # This happens for example with volume 88 page 1.
-            return [PdfDescription(Path(url).stem, url)]
+            return [PdfDescription(volume, page, Path(url).stem, url)]
 
         soup = BeautifulSoup(response.content, "html.parser")
         link_tags = soup.find_all(OrgSynScrapper.pdfLinkFilter)
@@ -371,12 +376,12 @@ class OrgSynScrapper(object):
 
         if len(titles) == len(links):
             return list(map(
-                lambda title_url: PdfDescription(*title_url),
+                lambda title_url: PdfDescription(volume, page, *title_url),
                 zip(titles, links)
             ))
 
         return list(map(
-            lambda url: PdfDescription(Path(url).stem, url),
+            lambda url: PdfDescription(volume, page, Path(url).stem, url),
             links
         ))
 
@@ -463,6 +468,8 @@ class OrgSynScrapper(object):
         ```
         [
             {
+                "annualVolume" : "string",
+                "page" : "string",
                 "name": "string",
                 "slug": "string",
                 "url": "string"
@@ -476,6 +483,8 @@ class OrgSynScrapper(object):
         """
         data = map(
             lambda description: {
+                "annualVolume" : description.annualVolume,
+                "page" : description.page,
                 "name": description.name,
                 "slug": description.slug,
                 "url": description.url
