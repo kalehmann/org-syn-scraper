@@ -26,8 +26,10 @@ import json
 import multiprocessing
 import numpy
 from pathlib import Path
+import os
 import re
 import requests
+import sys
 from typing import List, Tuple
 import urllib.parse
 
@@ -149,6 +151,58 @@ def volume_page_pdf_link_wrapper(
     :return: A list with PdfDescription instances describing the files
     """
     return OrgSynScrapper.doLoadVolumePagesPdfLinks(*data)
+
+class ProgressBar(object):
+    """A quick and dirty progress bar for the terminal. Shows the progress in
+    numbers and graphical.
+    """
+    PREFIX="[{current:>{width}}/{total}] "
+
+    def __init__(self, total : int):
+        """
+        :param total: The total number of items that will be processed
+        """
+        self.total = total
+        self.total_len = len(str(total))
+        self.prefix_len = len(ProgressBar.PREFIX.format(
+            current=0, width=self.total_len, total=self.total
+        ))
+        self.progress = 0
+
+    def print_progress(self):
+        """(Re)prints the progress bar"""
+        prefix = ProgressBar.PREFIX.format(
+            current=self.progress,
+            width=self.total_len,
+            total=self.total
+        )
+        # The width of the bar is the total width minus the prefix length and
+        # two characters for the square brackets enclosing the progress bar.
+        width = os.get_terminal_size(0).columns - self.prefix_len - 2
+        bar = "=" * int(width * self.progress / self.total - 1) + ">"
+        sys.stdout.write(
+            "\r{prefix}[{bar:<{width}}]".format(
+                prefix=prefix,
+                bar=bar,
+                width=width,
+            )
+        )
+        sys.stdout.flush()
+
+    def increase(self):
+        """
+        Tells the progress bar, that one more item has been processed. This
+        advances and redraws it.
+        """
+        self.progress += 1
+        if self.progress > self.total:
+            # Avoid weird behavior
+            return
+        self.print_progress()
+        if self.progress == self.total:
+            # Perform a line break if we are done.
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
