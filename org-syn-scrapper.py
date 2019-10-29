@@ -34,6 +34,42 @@ import sys
 import time
 from typing import List, Tuple
 import urllib.parse
+import urllib.request
+
+class PdfDescription(object):
+    """Describes a PDF file on the server with the name of the file and a link
+    to it.
+    """
+    def __init__(self, annualVolume : str, page : str, name : str, url : str):
+        self.aliases = []
+        self.annualVolume = annualVolume
+        self.name = name
+        self.page = page
+        self.url = url
+
+    @property
+    def slug(self):
+        # See https://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename
+        # See https://github.com/django/django/blob/master/django/utils/text.py
+        s = str(self.name).strip().replace(' ', '_')
+
+        return re.sub(r'(?u)[^-\w.]', '', s)
+
+    @property
+    def downloadPath(self):
+        return f"{self.annualVolume}/{self.page}/{self.slug}.pdf"
+
+    def __repr__(self):
+        data = {
+          "aliases" : self.aliases,
+          "annualVolume" : self.annualVolume,
+          "name" : self.name,
+          "page" : self.page,
+          "slug" : self.slug,
+          "url" : self.url,
+        }
+
+        return json.dumps(data, indent=2)
 
 class ScrapperParser(object):
     """Parser of command line arguments for the OrgSynScrapper."""
@@ -74,25 +110,63 @@ class ScrapperParser(object):
         )
         dump_links.set_defaults(func=self.dump_links)
 
-    def dump_links(self, args):
-        """Dumps the links of all pdf files in a volume or all volumes as json
-        or plain text.
+        download = subparsers.add_parser(
+            "download",
+            description="Dumps the PDF links from all or a single volume"
+        )
+        download.add_argument(
+            "--volume",
+            dest="volume",
+            help="The optional number of the annual volume to scrape for pdf links",
+            required=False,
+        )
+        download.add_argument(
+            "--processes",
+            default=4,
+            dest="processes",
+            help="The number of parallel processes",
+            required=False,
+            type=int
+        )
+        download.add_argument(
+            "dest",
+            help="The directory to download the pdf files into",
+        )
+        download.set_defaults(func=self.download)
 
-        :param args: The command line arguments for the dump_links function
+    def fetch_links(
+        self, volume : str = None, number_of_processes : int = 4
+    ) -> List[PdfDescription]:
+        """Fetches the links for a given volume or all volumes if none is given
+        parallely.
+
+        :param volume: The volume to scrape for pdf links or None to scrape all
+                       volumes
+        :param number_of_processes: The number of parallel processes
+
+        :return: A list with PdfDescription instances describing the files
         """
-        annualVolumes = [args.volume]
+        annualVolumes = [volume]
         pdfDescriptions = []
-        if args.volume is None:
+        if volume is None:
             with OrgSynScrapper() as scrapper:
                 annualVolumes = scrapper.requestVolumes()
 
         for volume in annualVolumes:
             pdfDescriptions += OrgSynScrapper.doLoadVolumePdfLinksParallel(
                 volume,
-                number_of_processes=args.processes
+                number_of_processes=number_of_processes
             )
 
-        pdfDescriptions = OrgSynScrapper.deduplicateLinks(pdfDescriptions)
+        return OrgSynScrapper.deduplicateLinks(pdfDescriptions)
+
+    def dump_links(self, args):
+        """Dumps the links of all pdf files in a volume or all volumes as json
+        or plain text.
+
+        :param args: The command line arguments for the dump_links function
+        """
+        pdfDescriptions = self.fetch_links(args.volume, args.processes)
 
         if args.links_only:
             for description in pdfDescriptions:
@@ -101,6 +175,12 @@ class ScrapperParser(object):
 
         print(OrgSynScrapper.generateLinkJson(pdfDescriptions))
 
+    def download(self, args):
+        pdfDescriptions = self.fetch_links(args.volume, args.processes)
+
+        OrgSynScrapper.downloadPdfFilesParallel(pdfDescriptions, args.dest)
+
+
     def parse_args(self, *args, **kwargs):
         """Just a passtrough to the parse_args method of the ArgumentParser
         instance.
@@ -108,37 +188,6 @@ class ScrapperParser(object):
         See https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_args
         """
         return self.parser.parse_args(*args, **kwargs)
-
-class PdfDescription(object):
-    """Describes a PDF file on the server with the name of the file and a link
-    to it.
-    """
-    def __init__(self, annualVolume : str, page : str, name : str, url : str):
-        self.aliases = []
-        self.annualVolume = annualVolume
-        self.name = name
-        self.page = page
-        self.url = url
-
-    @property
-    def slug(self):
-        # See https://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename
-        # See https://github.com/django/django/blob/master/django/utils/text.py
-        s = str(self.name).strip().replace(' ', '_')
-
-        return re.sub(r'(?u)[^-\w.]', '', s)
-
-    def __repr__(self):
-        data = {
-          "aliases" : self.aliases,
-          "annualVolume" : self.annualVolume,
-          "name" : self.name,
-          "page" : self.page,
-          "slug" : self.slug,
-          "url" : self.url,
-        }
-
-        return json.dumps(data, indent=2)
 
 class ProgressBar(object):
     """A quick and dirty progress bar for the terminal. Shows the progress in
@@ -492,6 +541,53 @@ class OrgSynScrapper(object):
                 links += scrapper.requestVolumePagePdfLinks(volume, page)
 
         return links
+
+    @staticmethod
+    def downloadPdfFile(args: Tuple[str, PdfDescription]) -> bool:
+        """
+        """
+        dest_dir, description = args
+
+        path = os.path.join(dest_dir, description.downloadPath)
+
+        try:
+            urllib.request.urlretrieve(description.url, path)
+
+            return True
+        except:
+            return False
+
+    @classmethod
+    def downloadPdfFilesParallel(
+        cls,
+        links : List[PdfDescription],
+        dest_dir : str,
+        number_of_processes : int = 4
+    ) -> None:
+        """Download a list of pdf links to the local hard drive.
+
+        :param links:
+        :param dest_dir:
+        """
+        dirs = set()
+
+        for link in links:
+            dir = os.path.join(dest_dir, f"{link.annualVolume}/{link.page}")
+            dirs.add(dir)
+
+        for dir in dirs:
+            os.makedirs(dir, exist_ok=True)
+
+        prog = ProgressBar(len(links))
+
+        with multiprocessing.Pool(processes=number_of_processes) as pool:
+            result = pool.imap_unordered(
+                cls.downloadPdfFile,
+                zip([dest_dir] * len(links), links)
+            )
+
+            for res in result:
+                prog.increase()
 
     @classmethod
     def doLoadVolumePdfLinksParallel(
