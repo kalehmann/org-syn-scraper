@@ -29,7 +29,9 @@ from pathlib import Path
 import os
 import re
 import requests
+from requests.exceptions import RequestException
 import sys
+import time
 from typing import List, Tuple
 import urllib.parse
 
@@ -270,7 +272,19 @@ class OrgSynScrapper(object):
 
         :return: A list with all annual volumes as strings
         """
-        response = self.session.get(OrgSynScrapper.URL)
+        for _ in range(5):
+            try:
+                response = self.session.get(OrgSynScrapper.URL)
+                break
+            except RequestException as e:
+                print(
+                    "An exception occured while requesting all the volumes " +
+                    str(e),
+                    file=sys.stderr
+                )
+                time.sleep(10)
+        else:
+            return []
         soup = BeautifulSoup(response.content, 'html.parser')
 
         self.viewstate = OrgSynScrapper.getInputValue(soup, "__VIEWSTATE")
@@ -332,7 +346,18 @@ class OrgSynScrapper(object):
             "__EVENTVALIDATION": self.eventvalidation,
         }
 
-        response = self.session.post(OrgSynScrapper.URL, data=body)
+        for _ in range(5):
+            try:
+                response = self.session.post(OrgSynScrapper.URL, data=body)
+                break
+            except RequestException as e:
+                print(
+                    f"An exception occured while fetching the pages of volume {volume} : {str(e)}",
+                    file=sys.stderr
+                )
+                time.sleep(10)
+        else:
+            return []
         content = str(response.content)
         options_html = str(response.content).split("|")[
             OrgSynScrapper.PAGES_RESPONSE_OPTIONS_INDEX
@@ -393,11 +418,22 @@ class OrgSynScrapper(object):
             "__EVENTVALIDATION": self.eventvalidation,
         }
 
-        response = self.session.post(
-            OrgSynScrapper.URL,
-            data=body,
-            cookies={"quickSearchTab" : "0"}
-        )
+        for _ in range(5):
+            try:
+                response = self.session.post(
+                    OrgSynScrapper.URL,
+                    data=body,
+                    cookies={"quickSearchTab" : "0"}
+                )
+                break
+            except RequestException as e:
+                print(
+                    f"An exception occured while fetching page {page} of volume {volume} : {str(e)}",
+                    file=sys.stderr
+                )
+                time.sleep(10)
+        else:
+            return []
 
         url = response.url
         if url.endswith(".pdf"):
