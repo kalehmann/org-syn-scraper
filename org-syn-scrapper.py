@@ -140,20 +140,6 @@ class PdfDescription(object):
 
         return json.dumps(data, indent=2)
 
-def volume_page_pdf_link_wrapper(
-    data : Tuple[str, List[str]]
-) -> List[PdfDescription]:
-    """Wrapper for the doLoadVolumePagesPdfLinks class method of the
-    OrgSynScrapper class. This function takes the doLoadVolumePagesPdfLinks
-    methods arguments as a list and unpacks them. It is used as function
-    for the map method of the multiprocessing.Pool class.
-
-    :param data: a tuple with the doLoadVolumePagesPdfLinks arguments
-
-    :return: A list with PdfDescription instances describing the files
-    """
-    return OrgSynScrapper.doLoadVolumePagesPdfLinks(*data)
-
 class ProgressBar(object):
     """A quick and dirty progress bar for the terminal. Shows the progress in
     numbers and graphical.
@@ -530,8 +516,8 @@ class OrgSynScrapper(object):
         page_chunks = numpy.array_split(pages, number_of_processes)
 
         with multiprocessing.Pool(processes=number_of_processes) as pool:
-            result = pool.map(
-                volume_page_pdf_link_wrapper,
+            result = pool.starmap(
+                OrgSynScrapper.doLoadVolumePagesPdfLinks,
                 zip([volume] * number_of_processes, page_chunks)
             )
 
