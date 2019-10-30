@@ -33,9 +33,69 @@ import requests
 from requests.exceptions import RequestException
 import sys
 import time
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 import urllib.parse
 import urllib.request
+
+
+class ProgressBar(object):
+    """A quick and dirty progress bar for the terminal. Shows the progress in
+    numbers and graphical.
+    """
+    PREFIX="[{current:>{width}}/{total}] "
+
+    def __init__(self, total : int):
+        """
+        :param total: The total number of items that will be processed
+        """
+        self.progress = 0
+        self.set_total(total)
+
+    def set_total(self, total):
+        """
+        """
+        self.total = total
+        self.total_len = len(str(total))
+        self.prefix_len = len(ProgressBar.PREFIX.format(
+            current=0, width=self.total_len, total=self.total
+        ))
+        if total:
+            self.print_progress()
+
+    def print_progress(self):
+        """(Re)prints the progress bar"""
+        prefix = ProgressBar.PREFIX.format(
+            current=self.progress,
+            width=self.total_len,
+            total=self.total
+        )
+        # The width of the bar is the total width minus the prefix length and
+        # two characters for the square brackets enclosing the progress bar.
+        width = os.get_terminal_size(0).columns - self.prefix_len - 2
+        bar = "=" * int(width * self.progress / self.total - 1) + ">"
+        sys.stdout.write(
+            "\r{prefix}[{bar:<{width}}]".format(
+                prefix=prefix,
+                bar=bar,
+                width=width,
+            )
+        )
+        sys.stdout.flush()
+
+    def increase(self):
+        """
+        Tells the progress bar, that one more item has been processed. This
+        advances and redraws it.
+        """
+        self.progress += 1
+        if self.progress > self.total:
+            # Avoid weird behavior
+            return
+        self.print_progress()
+        if self.progress == self.total:
+            # Perform a line break if we are done.
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
 class PdfDescription(object):
     """Describes a PDF file on the server with the name of the file and a link
@@ -136,7 +196,10 @@ class ScrapperParser(object):
         download.set_defaults(func=self.download)
 
     def fetch_links(
-        self, volume : str = None, number_of_processes : int = 4
+        self,
+        volume : str = None,
+        number_of_processes : int = 4,
+        progress_bar : ProgressBar = None
     ) -> List[PdfDescription]:
         """Fetches the links for a given volume or all volumes if none is given
         parallely.
@@ -144,6 +207,8 @@ class ScrapperParser(object):
         :param volume: The volume to scrape for pdf links or None to scrape all
                        volumes
         :param number_of_processes: The number of parallel processes
+        :param progress_bar: An optional ProgressBar instance for visual
+                             progress tracking
 
         :return: A list with PdfDescription instances describing the files
         """
@@ -153,11 +218,16 @@ class ScrapperParser(object):
             with OrgSynScrapper() as scrapper:
                 annualVolumes = scrapper.requestVolumes()
 
+        if progress_bar:
+            progress_bar.set_total(len(annualVolumes))
+
         for volume in annualVolumes:
             pdfDescriptions += OrgSynScrapper.doLoadVolumePdfLinksParallel(
                 volume,
                 number_of_processes=number_of_processes
             )
+            if progress_bar:
+                progress_bar.increase()
 
         return OrgSynScrapper.deduplicateLinks(pdfDescriptions)
 
@@ -177,9 +247,24 @@ class ScrapperParser(object):
         print(OrgSynScrapper.generateLinkJson(pdfDescriptions))
 
     def download(self, args):
-        pdfDescriptions = self.fetch_links(args.volume, args.processes)
+        volume_progress_bar = ProgressBar(0)
+        file_progress_bar = ProgressBar(0)
 
-        OrgSynScrapper.downloadPdfFilesParallel(pdfDescriptions, args.dest)
+        print("Scraping volumes for links:")
+        pdfDescriptions = self.fetch_links(
+            args.volume,
+            number_of_processes=args.processes,
+            progress_bar=volume_progress_bar
+        )
+        print(f"Found {len(pdfDescriptions)} links.")
+
+        print("Downloading files")
+        OrgSynScrapper.downloadPdfFilesParallel(
+            pdfDescriptions,
+            args.dest,
+            number_of_processes=args.processes,
+            progress_bar=file_progress_bar
+        )
 
 
     def parse_args(self, *args, **kwargs):
@@ -189,58 +274,6 @@ class ScrapperParser(object):
         See https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_args
         """
         return self.parser.parse_args(*args, **kwargs)
-
-class ProgressBar(object):
-    """A quick and dirty progress bar for the terminal. Shows the progress in
-    numbers and graphical.
-    """
-    PREFIX="[{current:>{width}}/{total}] "
-
-    def __init__(self, total : int):
-        """
-        :param total: The total number of items that will be processed
-        """
-        self.total = total
-        self.total_len = len(str(total))
-        self.prefix_len = len(ProgressBar.PREFIX.format(
-            current=0, width=self.total_len, total=self.total
-        ))
-        self.progress = 0
-
-    def print_progress(self):
-        """(Re)prints the progress bar"""
-        prefix = ProgressBar.PREFIX.format(
-            current=self.progress,
-            width=self.total_len,
-            total=self.total
-        )
-        # The width of the bar is the total width minus the prefix length and
-        # two characters for the square brackets enclosing the progress bar.
-        width = os.get_terminal_size(0).columns - self.prefix_len - 2
-        bar = "=" * int(width * self.progress / self.total - 1) + ">"
-        sys.stdout.write(
-            "\r{prefix}[{bar:<{width}}]".format(
-                prefix=prefix,
-                bar=bar,
-                width=width,
-            )
-        )
-        sys.stdout.flush()
-
-    def increase(self):
-        """
-        Tells the progress bar, that one more item has been processed. This
-        advances and redraws it.
-        """
-        self.progress += 1
-        if self.progress > self.total:
-            # Avoid weird behavior
-            return
-        self.print_progress()
-        if self.progress == self.total:
-            # Perform a line break if we are done.
-            sys.stdout.write("\n")
-            sys.stdout.flush()
 
 class OrgSynScrapper(object):
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
@@ -587,12 +620,17 @@ class OrgSynScrapper(object):
         cls,
         links : List[PdfDescription],
         dest_dir : str,
-        number_of_processes : int = 4
+        number_of_processes : int = 4,
+        progress_bar : ProgressBar = None
     ) -> None:
         """Download a list of pdf links to the local hard drive.
 
-        :param links:
-        :param dest_dir:
+        :param links: A list with PdfDescription instances describing the files
+                      to download
+        :param dest_dir: The of the directory in which the files should be
+                         downloaded
+        :param progress_bar: An optional ProgressBar instance for visual
+                             progress tracking
         """
         dirs = set()
 
@@ -603,7 +641,8 @@ class OrgSynScrapper(object):
         for dir in dirs:
             os.makedirs(dir, exist_ok=True)
 
-        prog = ProgressBar(len(links))
+        if progress_bar:
+            progress_bar.set_total(len(links))
 
         with multiprocessing.Pool(processes=number_of_processes) as pool:
             result = pool.imap_unordered(
@@ -612,7 +651,8 @@ class OrgSynScrapper(object):
             )
 
             for res in result:
-                prog.increase()
+                if progress_bar:
+                    progress_bar.increase()
 
     @classmethod
     def doLoadVolumePdfLinksParallel(
