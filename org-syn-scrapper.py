@@ -22,6 +22,7 @@ http://orgsyn.org/ and download the PDF files.
 
 import argparse
 from bs4 import BeautifulSoup, Tag
+import datetime
 import json
 import multiprocessing
 import numpy
@@ -247,6 +248,7 @@ class OrgSynScrapper(object):
     PAGES_RESPONSE_VIEWSTATE_INDEX = 51
     PAGES_RESPONSE_VIEWSTATEGENERATOR_INDEX = 55
     PAGES_RESPONSE_EVENTVALIDATION_INDEX = 59
+    REQUEST_TIMEOUT = 15
     URL = "http://orgsyn.org"
     USER_AGENT = "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"
 
@@ -307,19 +309,27 @@ class OrgSynScrapper(object):
 
         :return: A list with all annual volumes as strings
         """
-        for _ in range(5):
+        for i in range(1, 5):
             try:
-                response = self.session.get(OrgSynScrapper.URL)
+                response = self.session.get(
+                    OrgSynScrapper.URL,
+                    timeout=OrgSynScrapper.REQUEST_TIMEOUT
+                )
                 break
             except RequestException as e:
                 print(
-                    "An exception occured while requesting all the volumes " +
-                    str(e),
+                    f"[{datetime.datetime.now().ctime()}] An exception occured while requesting all the volumes {str(e)}. Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
-                time.sleep(10)
+                time.sleep(i * 10)
         else:
+            print(
+                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the volumes after 5 tries.",
+                file=sys.stderr
+            )
+
             return []
+
         soup = BeautifulSoup(response.content, 'html.parser')
 
         self.viewstate = OrgSynScrapper.getInputValue(soup, "__VIEWSTATE")
@@ -381,17 +391,26 @@ class OrgSynScrapper(object):
             "__EVENTVALIDATION": self.eventvalidation,
         }
 
-        for _ in range(5):
+        for i in range(5):
             try:
-                response = self.session.post(OrgSynScrapper.URL, data=body)
+                response = self.session.post(
+                    OrgSynScrapper.URL,
+                    data=body,
+                    timeout=OrgSynScrapper.REQUEST_TIMEOUT
+                )
                 break
             except RequestException as e:
                 print(
-                    f"An exception occured while fetching the pages of volume {volume} : {str(e)}",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured while fetching the pages of volume {volume} : {str(e)}. Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
-                time.sleep(10)
+                time.sleep(i * 10)
         else:
+            print(
+                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the pages of volume {volume} after 5 tries.",
+                file=sys.stderr
+            )
+
             return []
         content = str(response.content)
         options_html = str(response.content).split("|")[
@@ -453,21 +472,27 @@ class OrgSynScrapper(object):
             "__EVENTVALIDATION": self.eventvalidation,
         }
 
-        for _ in range(5):
+        for i in range(5):
             try:
                 response = self.session.post(
                     OrgSynScrapper.URL,
+                    cookies={"quickSearchTab" : "0"},
                     data=body,
-                    cookies={"quickSearchTab" : "0"}
+                    timeout=OrgSynScrapper.REQUEST_TIMEOUT,
                 )
                 break
             except RequestException as e:
                 print(
-                    f"An exception occured while fetching page {page} of volume {volume} : {str(e)}",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured while fetching page {page} of volume {volume} : {str(e)}. Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
-                time.sleep(10)
+                time.sleep(i * 10)
         else:
+            print(
+                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the page {page} of volume {volume} after 5 tries.",
+                file=sys.stderr
+            )
+
             return []
 
         url = response.url
