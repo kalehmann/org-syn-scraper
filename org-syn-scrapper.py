@@ -34,6 +34,7 @@ from requests.exceptions import RequestException
 import sys
 import time
 from typing import Callable, List, Tuple
+from urllib.error import URLError
 import urllib.parse
 import urllib.request
 
@@ -608,11 +609,23 @@ class OrgSynScrapper(object):
 
         path = os.path.join(dest_dir, description.downloadPath)
 
-        try:
-            urllib.request.urlretrieve(description.url, path)
+        for i in range(5):
+            try:
+                urllib.request.urlretrieve(description.url, path)
 
-            return True
-        except:
+                return True
+            except URLError as e:
+                print(
+                    f"[{datetime.datetime.now().ctime()}] An exception occured while downloading {description.url} : {str(e)}. Try again in {i * 10} seconds",
+                    file=sys.stderr
+                )
+                time.sleep(i * 10)
+        else:
+            print(
+                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the file {description.url} after 5 tries.",
+                file=sys.stderr
+            )
+
             return False
 
     @classmethod
