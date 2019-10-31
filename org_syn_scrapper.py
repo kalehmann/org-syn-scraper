@@ -664,6 +664,14 @@ class OrgSynScrapper(object):
         dest_dir, description = args
 
         path = os.path.join(dest_dir, description.download_path)
+        if os.path.isfile(path):
+            print(
+                f"[{datetime.datetime.now().ctime()}] Error:"
+                f" The file {path} does already exist",
+                file=sys.stderr
+            )
+
+            return False
 
         for i in range(5):
             try:
