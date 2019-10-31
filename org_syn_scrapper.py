@@ -135,7 +135,7 @@ class PdfDescription(object):
 
         :return: The generated path
         """
-        return f"{self.annual_volume}/{self.page}_{self.slug}.pdf"
+        return f"{self.annual_volume}/{self.page}_{self.slug[:64]}.pdf"
 
     def __repr__(self) -> str:
         """Generates a representation of the description in json.
