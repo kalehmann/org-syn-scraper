@@ -392,7 +392,7 @@ class OrgSynScrapper(object):
             except RequestException as exc:
                 print(
                     f"[{datetime.datetime.now().ctime()}] An exception occured"
-                    f"while requesting all the volumes {str(exc)}."
+                    f" while requesting all the volumes {str(exc)}."
                     f" Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
