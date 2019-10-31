@@ -21,39 +21,43 @@ http://orgsyn.org/ and download the PDF files.
 """
 
 import argparse
-from bs4 import BeautifulSoup, Tag
 import datetime
 import json
 import multiprocessing
-import numpy
 from pathlib import Path
 import os
 import re
-import requests
-from requests.exceptions import RequestException
 import sys
 import time
-from typing import Callable, List, Tuple
+from typing import List, Tuple
 from urllib.error import URLError
 import urllib.parse
 import urllib.request
 
+from bs4 import BeautifulSoup, Tag
+import numpy
+import requests
+from requests.exceptions import RequestException
 
 class ProgressBar(object):
     """A quick and dirty progress bar for the terminal. Shows the progress in
     numbers and graphical.
     """
-    PREFIX="[{current:>{width}}/{total}] "
+    PREFIX = "[{current:>{width}}/{total}] "
 
-    def __init__(self, total : int):
+    def __init__(self, total: int):
         """
         :param total: The total number of items that will be processed
         """
         self.progress = 0
         self.set_total(total)
 
-    def set_total(self, total):
-        """
+    def set_total(self, total: int):
+        """Sets the total amount of items that will be progressed, that means
+        the number of times the `increase` method will be called.
+
+        :param total: The total number of times the `increase` method will be
+                      called
         """
         self.total = total
         self.total_len = len(str(total))
@@ -73,11 +77,11 @@ class ProgressBar(object):
         # The width of the bar is the total width minus the prefix length and
         # two characters for the square brackets enclosing the progress bar.
         width = os.get_terminal_size(0).columns - self.prefix_len - 2
-        bar = "=" * int(width * self.progress / self.total - 1) + ">"
+        prog_bar = "=" * int(width * self.progress / self.total - 1) + ">"
         sys.stdout.write(
-            "\r{prefix}[{bar:<{width}}]".format(
+            "\r{prefix}[{prog_bar:<{width}}]".format(
                 prefix=prefix,
-                bar=bar,
+                prog_bar=prog_bar,
                 width=width,
             )
         )
@@ -102,33 +106,49 @@ class PdfDescription(object):
     """Describes a PDF file on the server with the name of the file and a link
     to it.
     """
-    def __init__(self, annualVolume : str, page : str, name : str, url : str):
+    def __init__(self, annual_volume: str, page: str, name: str, url: str):
         self.aliases = []
-        self.annualVolume = annualVolume
+        self.annual_volume = annual_volume
         self.name = name
         self.page = page
         self.url = url
 
     @property
-    def slug(self):
+    def slug(self) -> str:
+        """Generates a slug, that can be used as a file name out of the
+        documents name.
+
+        :return: A slug generated out of the documents name
+        """
         # See https://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename
         # See https://github.com/django/django/blob/master/django/utils/text.py
-        s = str(self.name).strip().replace(' ', '_')
-
-        return re.sub(r'(?u)[^-\w.]', '', s)
+        return re.sub(
+            r'(?u)[^-\w.]',
+            '',
+            str(self.name).strip().replace(' ', '_')
+        )
 
     @property
-    def downloadPath(self):
-        return f"{self.annualVolume}/{self.page}/{self.slug}.pdf"
+    def download_path(self) -> str:
+        """Generates a path for the file in the form
+        `annual_volume/page/slug.pdf`.
 
-    def __repr__(self):
+        :return: The generated path
+        """
+        return f"{self.annual_volume}/{self.page}/{self.slug}.pdf"
+
+    def __repr__(self) -> str:
+        """Generates a representation of the description in json.
+
+        :return: A representation of the description in json
+        """
         data = {
-          "aliases" : self.aliases,
-          "annualVolume" : self.annualVolume,
-          "name" : self.name,
-          "page" : self.page,
-          "slug" : self.slug,
-          "url" : self.url,
+            "aliases" : self.aliases,
+            "annual_volume" : self.annual_volume,
+            "name" : self.name,
+            "page" : self.page,
+            "slug" : self.slug,
+            "url" : self.url,
         }
 
         return json.dumps(data, indent=2)
@@ -137,7 +157,7 @@ class ScrapperParser(object):
     """Parser of command line arguments for the OrgSynScrapper."""
     def __init__(self):
         self.parser = argparse.ArgumentParser(
-            description="Scrape pdf links from http://orgsyn.org"
+            description="Scrape PDF links from http://orgsyn.org"
         )
         subparsers = self.parser.add_subparsers(
             dest="command",
@@ -152,7 +172,7 @@ class ScrapperParser(object):
         dump_links.add_argument(
             "--volume",
             dest="volume",
-            help="The optional number of the annual volume to scrape for pdf links",
+            help="The optional number of the annual volume to scrape for PDF links",
             required=False,
         )
         dump_links.add_argument(
@@ -170,7 +190,7 @@ class ScrapperParser(object):
             required=False,
             type=int
         )
-        dump_links.set_defaults(func=self.dump_links)
+        dump_links.set_defaults(func=ScrapperParser.dump_links)
 
         download = subparsers.add_parser(
             "download",
@@ -179,7 +199,7 @@ class ScrapperParser(object):
         download.add_argument(
             "--volume",
             dest="volume",
-            help="The optional number of the annual volume to scrape for pdf links",
+            help="The optional number of the annual volume to scrape for PDF links",
             required=False,
         )
         download.add_argument(
@@ -192,20 +212,20 @@ class ScrapperParser(object):
         )
         download.add_argument(
             "dest",
-            help="The directory to download the pdf files into",
+            help="The directory to download the PDF files into",
         )
-        download.set_defaults(func=self.download)
+        download.set_defaults(func=ScrapperParser.download)
 
+    @staticmethod
     def fetch_links(
-        self,
-        volume : str = None,
-        number_of_processes : int = 4,
-        progress_bar : ProgressBar = None
+            volume: str = None,
+            number_of_processes: int = 4,
+            progress_bar: ProgressBar = None
     ) -> List[PdfDescription]:
         """Fetches the links for a given volume or all volumes if none is given
         parallely.
 
-        :param volume: The volume to scrape for pdf links or None to scrape all
+        :param volume: The volume to scrape for PDF links or None to scrape all
                        volumes
         :param number_of_processes: The number of parallel processes
         :param progress_bar: An optional ProgressBar instance for visual
@@ -213,55 +233,65 @@ class ScrapperParser(object):
 
         :return: A list with PdfDescription instances describing the files
         """
-        annualVolumes = [volume]
-        pdfDescriptions = []
+        annual_volumes = [volume]
+        pdf_descriptions = []
         if volume is None:
             with OrgSynScrapper() as scrapper:
-                annualVolumes = scrapper.requestVolumes()
+                annual_volumes = scrapper.request_volumes()
 
         if progress_bar:
-            progress_bar.set_total(len(annualVolumes))
+            progress_bar.set_total(len(annual_volumes))
 
-        for volume in annualVolumes:
-            pdfDescriptions += OrgSynScrapper.doLoadVolumePdfLinksParallel(
-                volume,
+        for vol in annual_volumes:
+            pdf_descriptions += OrgSynScrapper.do_load_volume_links_parallel(
+                vol,
                 number_of_processes=number_of_processes
             )
             if progress_bar:
                 progress_bar.increase()
 
-        return OrgSynScrapper.deduplicateLinks(pdfDescriptions)
+        return OrgSynScrapper.deduplicate_links(pdf_descriptions)
 
-    def dump_links(self, args):
-        """Dumps the links of all pdf files in a volume or all volumes as json
+    @staticmethod
+    def dump_links(args):
+        """Dumps the links of all PDF files in a volume or all volumes as json
         or plain text.
 
         :param args: The command line arguments for the dump_links function
         """
-        pdfDescriptions = self.fetch_links(args.volume, args.processes)
+        pdf_descriptions = ScrapperParser.fetch_links(
+            args.volume,
+            args.processes
+        )
 
         if args.links_only:
-            for description in pdfDescriptions:
+            for description in pdf_descriptions:
                 print(description.url)
             return
 
-        print(OrgSynScrapper.generateLinkJson(pdfDescriptions))
+        print(OrgSynScrapper.generate_link_json(pdf_descriptions))
 
-    def download(self, args):
+    @staticmethod
+    def download(args):
+        """Download the PDF files from a single annual volume or all annual
+        volumes on http://orgsyn.org/.
+
+        :param args: The command line arguments for the download function
+        """
         volume_progress_bar = ProgressBar(0)
         file_progress_bar = ProgressBar(0)
 
         print("Scraping volumes for links:")
-        pdfDescriptions = self.fetch_links(
+        pdf_descriptions = ScrapperParser.fetch_links(
             args.volume,
             number_of_processes=args.processes,
             progress_bar=volume_progress_bar
         )
-        print(f"Found {len(pdfDescriptions)} links.")
+        print(f"Found {len(pdf_descriptions)} links.")
 
         print("Downloading files")
-        OrgSynScrapper.downloadPdfFilesParallel(
-            pdfDescriptions,
+        OrgSynScrapper.download_pdf_files_parallel(
+            pdf_descriptions,
             args.dest,
             number_of_processes=args.processes,
             progress_bar=file_progress_bar
@@ -269,7 +299,7 @@ class ScrapperParser(object):
 
 
     def parse_args(self, *args, **kwargs):
-        """Just a passtrough to the parse_args method of the ArgumentParser
+        """Just a pass trough to the `parse_args` method of the ArgumentParser
         instance.
 
         See https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_args
@@ -277,11 +307,19 @@ class ScrapperParser(object):
         return self.parser.parse_args(*args, **kwargs)
 
 class OrgSynScrapper(object):
+    """A simple scrapper for the PDF files on the website http://orgsyn.org/.
+
+    It can be used with Pythons with keyword, for example
+
+    >>> with OrgSynScrapper() as scrapper
+    ...    volumes = scrapper.request_volumes()
+
+    """
     ANNUAL_VOLUME_SELECT_ID = "ctl00_QuickSearchAnnVolList1"
-    PAGES_RESPONSE_OPTIONS_INDEX = 11
-    PAGES_RESPONSE_VIEWSTATE_INDEX = 51
-    PAGES_RESPONSE_VIEWSTATEGENERATOR_INDEX = 55
-    PAGES_RESPONSE_EVENTVALIDATION_INDEX = 59
+    PR_OPTIONS_INDEX = 11
+    PR_VIEWSTATE_INDEX = 51
+    PR_VIEWSTATEGENERATOR_INDEX = 55
+    PR_EVENTVALIDATION_INDEX = 59
     REQUEST_TIMEOUT = 15
     URL = "http://orgsyn.org"
     USER_AGENT = "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"
@@ -296,48 +334,49 @@ class OrgSynScrapper(object):
         self.eventvalidation = None
 
     def __enter__(self) -> 'OrgSynScrapper':
-        self.session = requests.session()
-        self.session.headers.update({
-	        "User-Agent" : OrgSynScrapper.USER_AGENT,
+        headers = {
+            "User-Agent" : OrgSynScrapper.USER_AGENT,
             "Accept" : "*/*",
             "Accept-Encoding" : "gzip,deflate,sdch",
             "Accept-Language" : "en-US,en;q=0.8",
-        })
+        }
+        self.session = requests.session()
+        self.session.headers.update(headers)
 
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type, exc_value, traceback):
         self.session.close()
 
     @staticmethod
-    def getInputValue(soup : BeautifulSoup, id : str) -> str:
+    def get_input_value(soup: BeautifulSoup, input_id: str) -> str:
         """Gets the value of the input element with the given id.
 
         :param soup: The BeautifulSoup instance to search for a input element
         with the given id
-        :param id: The id of the input element
+        :param input_id: The id of the input element
 
         :return: The value of the input element
         """
-        input_el = soup.find('input', {"id" : id})
+        input_el = soup.find('input', {"id" : input_id})
         if input_el:
             return input_el['value']
         return None
 
     @staticmethod
-    def pdfLinkFilter(tag : Tag):
+    def pdf_link_filter(tag: Tag):
         """Filter for a BeautifulSoup instance for tags with a link to a pdf
         file in a folder named `Content`
 
-        :param tag: The tag to check for a pdf link
+        :param tag: The tag to check for a PDF link
 
-        :returns: True if the tag links to a pdf file in a folder named Content
+        :returns: True if the tag links to a PDF file in a folder named Content
         else False
         """
         return (tag.has_attr("href") and tag["href"].startswith("Content")
-            and tag["href"].endswith(".pdf"))
+                and tag["href"].endswith(".pdf"))
 
-    def requestVolumes(self) -> List[str]:
+    def request_volumes(self) -> List[str]:
         """Requests all annual volumes and sets the viewstate,
         viewstategenerator and eventvalidation attributes.
 
@@ -350,15 +389,18 @@ class OrgSynScrapper(object):
                     timeout=OrgSynScrapper.REQUEST_TIMEOUT
                 )
                 break
-            except RequestException as e:
+            except RequestException as exc:
                 print(
-                    f"[{datetime.datetime.now().ctime()}] An exception occured while requesting all the volumes {str(e)}. Try again in {i * 10} seconds",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured"
+                    f"while requesting all the volumes {str(exc)}."
+                    f" Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
                 time.sleep(i * 10)
         else:
             print(
-                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the volumes after 5 tries.",
+                f"[{datetime.datetime.now().ctime()}] Error: "
+                f"Could not fetch the volumes after 5 tries.",
                 file=sys.stderr
             )
 
@@ -366,34 +408,34 @@ class OrgSynScrapper(object):
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        self.viewstate = OrgSynScrapper.getInputValue(soup, "__VIEWSTATE")
-        self.viewstategenerator = OrgSynScrapper.getInputValue(
+        self.viewstate = OrgSynScrapper.get_input_value(soup, "__VIEWSTATE")
+        self.viewstategenerator = OrgSynScrapper.get_input_value(
             soup,
             "__VIEWSTATEGENERATOR"
         )
-        self.eventvalidation = OrgSynScrapper.getInputValue(
+        self.eventvalidation = OrgSynScrapper.get_input_value(
             soup,
             "__EVENTVALIDATION"
         )
 
-        annualVolSelect = soup.find(
+        annual_vol_select = soup.find(
             "select",
             {"id" : OrgSynScrapper.ANNUAL_VOLUME_SELECT_ID}
         )
 
-        annualVolumes = map(
+        annual_volumes = map(
             lambda option: option["value"],
-            annualVolSelect.findAll("option")
+            annual_vol_select.findAll("option")
         )
 
         filtered_volumes = filter(
             lambda volume: volume,
-            annualVolumes
+            annual_volumes
         )
 
         return list(filtered_volumes)
 
-    def requestPagesOfVolume(self, volume: str) -> List[str]:
+    def request_pages_of_volume(self, volume: str) -> List[str]:
         """Requests all pages of an annual volume.
 
         :param volume: The volume to request the pages for
@@ -433,27 +475,29 @@ class OrgSynScrapper(object):
                     timeout=OrgSynScrapper.REQUEST_TIMEOUT
                 )
                 break
-            except RequestException as e:
+            except RequestException as exc:
                 print(
-                    f"[{datetime.datetime.now().ctime()}] An exception occured while fetching the pages of volume {volume} : {str(e)}. Try again in {i * 10} seconds",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured"
+                    f" while fetching the pages of volume {volume} : {str(exc)}."
+                    f" Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
                 time.sleep(i * 10)
         else:
             print(
-                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the pages of volume {volume} after 5 tries.",
+                f"[{datetime.datetime.now().ctime()}] Error: "
+                f"Could not fetch the pages of volume {volume} after 5 tries.",
                 file=sys.stderr
             )
 
             return []
-        content = str(response.content)
         options_html = str(response.content).split("|")[
-            OrgSynScrapper.PAGES_RESPONSE_OPTIONS_INDEX
+            OrgSynScrapper.PR_OPTIONS_INDEX
         ]
-        optionsSoup = BeautifulSoup(options_html, "html.parser")
+        options_soup = BeautifulSoup(options_html, "html.parser")
         pages = map(
             lambda option: option["value"],
-            optionsSoup.findAll("option")
+            options_soup.findAll("option")
         )
         filtered_pages = filter(
             lambda page: page,
@@ -461,24 +505,24 @@ class OrgSynScrapper(object):
         )
 
         self.viewstate = str(response.content).split("|")[
-            OrgSynScrapper.PAGES_RESPONSE_VIEWSTATE_INDEX
+            OrgSynScrapper.PR_VIEWSTATE_INDEX
         ]
         self.viewstategenerator = str(response.content).split("|")[
-            OrgSynScrapper.PAGES_RESPONSE_VIEWSTATEGENERATOR_INDEX
+            OrgSynScrapper.PR_VIEWSTATEGENERATOR_INDEX
         ]
         self.eventvalidation = str(response.content).split("|")[
-            OrgSynScrapper.PAGES_RESPONSE_EVENTVALIDATION_INDEX
+            OrgSynScrapper.PR_EVENTVALIDATION_INDEX
         ]
 
         return list(filtered_pages)
 
-    def requestVolumePagePdfLinks(
-        self, volume : str, page : str
+    def request_volume_page_pdf_links(
+            self, volume: str, page: str
     ) -> List[PdfDescription]:
-        """Request all pdf links for a page of a volume.
+        """Request all PDF links for a page of a volume.
 
         :param volume: The volume
-        :param page: The page of the volume to request the pdf links for
+        :param page: The page of the volume to request the PDF links for
 
         :return: A list with PdfDescription instances describing the files
         """
@@ -515,15 +559,19 @@ class OrgSynScrapper(object):
                     timeout=OrgSynScrapper.REQUEST_TIMEOUT,
                 )
                 break
-            except RequestException as e:
+            except RequestException as exc:
                 print(
-                    f"[{datetime.datetime.now().ctime()}] An exception occured while fetching page {page} of volume {volume} : {str(e)}. Try again in {i * 10} seconds",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured"
+                    f" while fetching page {page} of volume {volume} : "
+                    f"{str(exc)}. Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
                 time.sleep(i * 10)
         else:
             print(
-                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the page {page} of volume {volume} after 5 tries.",
+                f"[{datetime.datetime.now().ctime()}] Error: "
+                f"Could not fetch the page {page} of volume {volume} "
+                "after 5 tries.",
                 file=sys.stderr
             )
 
@@ -536,7 +584,7 @@ class OrgSynScrapper(object):
             return [PdfDescription(volume, page, Path(url).stem, url)]
 
         soup = BeautifulSoup(response.content, "html.parser")
-        link_tags = soup.find_all(OrgSynScrapper.pdfLinkFilter)
+        link_tags = soup.find_all(OrgSynScrapper.pdf_link_filter)
         links = list(map(
             lambda tag: urllib.parse.urljoin(OrgSynScrapper.URL, tag["href"]),
             link_tags
@@ -544,10 +592,10 @@ class OrgSynScrapper(object):
 
         title_tags = soup.select("#ctl00_MainContent_procedureBody > .title")
 
-        if len(link_tags) == 0:
+        if not link_tags:
             # Maybe the page has a different layout like page 121 of volume 49
-            # with two pdf files.
-            id_tags = soup.find_all("div", {"class" : "collapsibleContainer" })
+            # with two PDF files.
+            id_tags = soup.find_all("div", {"class" : "collapsibleContainer"})
             links = list(map(
                 lambda tag: urllib.parse.urljoin(
                     OrgSynScrapper.URL,
@@ -555,7 +603,7 @@ class OrgSynScrapper(object):
                 ),
                 id_tags
             ))
-            title_tags = soup.findAll("div", { "class" : "procTitle" })
+            title_tags = soup.findAll("div", {"class" : "procTitle"})
 
         titles = list(map(
             lambda tag: tag.text.strip(),
@@ -574,10 +622,10 @@ class OrgSynScrapper(object):
         ))
 
     @classmethod
-    def doLoadVolumePagesPdfLinks(
-        cls, volume : str, pages : List[str]
+    def do_load_volume_pages_pdf_links(
+            cls, volume: str, pages: List[str]
     ) -> List[PdfDescription]:
-        """Get the pdf links for a given set of pages. Does the full procedure
+        """Get the PDF links for a given set of pages. Does the full procedure
         without the need for any preceeding method calls for the viewstate etc.
 
         :param volume: The volume of the pages
@@ -588,55 +636,66 @@ class OrgSynScrapper(object):
         links = []
 
         with cls() as scrapper:
-            volumes = scrapper.requestVolumes()
+            volumes = scrapper.request_volumes()
             if volume not in volumes:
                 raise Exception(f"The volume {volume} does not exist")
-            volume_pages = scrapper.requestPagesOfVolume(volume)
+            volume_pages = scrapper.request_pages_of_volume(volume)
             for page in pages:
                 if page not in volume_pages:
                     raise Exception(
                         f"The page {page} does not exist in volume {volume}"
                     )
-                links += scrapper.requestVolumePagePdfLinks(volume, page)
+                links += scrapper.request_volume_page_pdf_links(volume, page)
 
         return links
 
     @staticmethod
-    def downloadPdfFile(args: Tuple[str, PdfDescription]) -> bool:
-        """
+    def download_pdf_file(args: Tuple[str, PdfDescription]) -> bool:
+        """Downloads a single PDF file to the given path. Tries at maximum five
+        times.
+
+        :param args: A tuple with the packed arguments of the function. The
+                     first element in the tuple is the path where the file is
+                     saved to on the local hard drive and the second element in
+                     the tuple is the PdfDescription instance of the file to
+                     download.
+        :return: Whether the download was successful or not
         """
         dest_dir, description = args
 
-        path = os.path.join(dest_dir, description.downloadPath)
+        path = os.path.join(dest_dir, description.download_path)
 
         for i in range(5):
             try:
                 urllib.request.urlretrieve(description.url, path)
 
                 return True
-            except URLError as e:
+            except URLError as exc:
                 print(
-                    f"[{datetime.datetime.now().ctime()}] An exception occured while downloading {description.url} : {str(e)}. Try again in {i * 10} seconds",
+                    f"[{datetime.datetime.now().ctime()}] An exception occured"
+                    f" while downloading {description.url} : {str(exc)}."
+                    f" Try again in {i * 10} seconds",
                     file=sys.stderr
                 )
                 time.sleep(i * 10)
-        else:
-            print(
-                f"[{datetime.datetime.now().ctime()}] Error: Could not fetch the file {description.url} after 5 tries.",
-                file=sys.stderr
-            )
 
-            return False
+        print(
+            f"[{datetime.datetime.now().ctime()}] Error: "
+            f"Could not fetch the file {description.url} after 5 tries.",
+            file=sys.stderr
+        )
+
+        return False
 
     @classmethod
-    def downloadPdfFilesParallel(
-        cls,
-        links : List[PdfDescription],
-        dest_dir : str,
-        number_of_processes : int = 4,
-        progress_bar : ProgressBar = None
+    def download_pdf_files_parallel(
+            cls,
+            links: List[PdfDescription],
+            dest_dir: str,
+            number_of_processes: int = 4,
+            progress_bar: ProgressBar = None
     ) -> None:
-        """Download a list of pdf links to the local hard drive.
+        """Download a list of PDF links to the local hard drive.
 
         :param links: A list with PdfDescription instances describing the files
                       to download
@@ -645,35 +704,38 @@ class OrgSynScrapper(object):
         :param progress_bar: An optional ProgressBar instance for visual
                              progress tracking
         """
-        dirs = set()
+        directories = set()
 
         for link in links:
-            dir = os.path.join(dest_dir, f"{link.annualVolume}/{link.page}")
-            dirs.add(dir)
+            directory = os.path.join(
+                dest_dir,
+                f"{link.annual_volume}/{link.page}"
+            )
+            directories.add(directory)
 
-        for dir in dirs:
-            os.makedirs(dir, exist_ok=True)
+        for directory in directories:
+            os.makedirs(directory, exist_ok=True)
 
         if progress_bar:
             progress_bar.set_total(len(links))
 
         with multiprocessing.Pool(processes=number_of_processes) as pool:
             result = pool.imap_unordered(
-                cls.downloadPdfFile,
+                cls.download_pdf_file,
                 zip([dest_dir] * len(links), links)
             )
 
-            for res in result:
+            for _ in result:
                 if progress_bar:
                     progress_bar.increase()
 
     @classmethod
-    def doLoadVolumePdfLinksParallel(
-        cls, volume : str, number_of_processes : int = 4
+    def do_load_volume_links_parallel(
+            cls, volume: str, number_of_processes: int = 4
     ) -> List[PdfDescription]:
-        """Performs the requests for the pdf links of a volume parallel.
+        """Performs the requests for the PDF links of a volume parallel.
 
-        :param volume: The volume to get the pdf links for
+        :param volume: The volume to get the PDF links for
         :param number_of_processes: The number of parallel processes that
                                     request the links
 
@@ -682,16 +744,16 @@ class OrgSynScrapper(object):
         links = []
 
         with cls() as scrapper:
-            volumes = scrapper.requestVolumes()
+            volumes = scrapper.request_volumes()
             if volume not in volumes:
                 raise Exception(f"The volume {volume} does not exist")
-            pages = scrapper.requestPagesOfVolume(volume)
+            pages = scrapper.request_pages_of_volume(volume)
 
         page_chunks = numpy.array_split(pages, number_of_processes)
 
         with multiprocessing.Pool(processes=number_of_processes) as pool:
             result = pool.starmap(
-                OrgSynScrapper.doLoadVolumePagesPdfLinks,
+                OrgSynScrapper.do_load_volume_pages_pdf_links,
                 zip([volume] * number_of_processes, page_chunks)
             )
 
@@ -700,29 +762,29 @@ class OrgSynScrapper(object):
 
         return links
 
-    def requestVolumePdfLinks(self, volume : str) -> List[PdfDescription]:
-        """Requests the pdf links of all pages in a given volume.
+    def request_volume_pdf_links(self, volume: str) -> List[PdfDescription]:
+        """Requests the PDF links of all pages in a given volume.
 
-        :param volume: the volume to get the pdf links for
+        :param volume: the volume to get the PDF links for
 
         :return: A list with PdfDescription instances describing the files
         """
-        pages = self.requestPagesOfVolume(volume)
+        pages = self.request_pages_of_volume(volume)
 
         links = []
 
         for page in pages:
-            links += self.requestVolumePagePdfLinks(volume, page)
+            links += self.request_volume_page_pdf_links(volume, page)
 
         return links
 
     @staticmethod
-    def deduplicateLinks(links : List[PdfDescription]) -> List[PdfDescription]:
-        """Removes duplicate links from a list of pdf descriptions.
+    def deduplicate_links(links: List[PdfDescription]) -> List[PdfDescription]:
+        """Removes duplicate links from a list of PDF descriptions.
 
-        :params links: The list of pdf descriptions to deduplicate
+        :params links: The list of PDF descriptions to deduplicate
 
-        :return: A deduplicated list of pdf descriptions
+        :return: A deduplicated list of PDF descriptions
         """
         deduplicated_descriptions = []
 
@@ -741,12 +803,12 @@ class OrgSynScrapper(object):
         return deduplicated_descriptions
 
     @staticmethod
-    def generateLinkJson(links : List[PdfDescription]) -> str:
+    def generate_link_json(links: List[PdfDescription]) -> str:
         """Generates a json string with the scheme
         ```
         [
             {
-                "annualVolume" : "string",
+                "annual_volume" : "string",
                 "page" : "string",
                 "name": "string",
                 "slug": "string",
@@ -761,7 +823,7 @@ class OrgSynScrapper(object):
         """
         data = map(
             lambda description: {
-                "annualVolume" : description.annualVolume,
+                "annual_volume" : description.annual_volume,
                 "page" : description.page,
                 "name": description.name,
                 "aliases" : description.aliases,
@@ -773,7 +835,13 @@ class OrgSynScrapper(object):
 
         return json.dumps(list(data), indent=2)
 
-if __name__ == "__main__":
+def main() -> None:
+    """The main function of the program. It runs a command line argument
+    parser for the scrapper.
+    """
     parser = ScrapperParser()
     args = parser.parse_args()
     args.func(args)
+
+if __name__ == "__main__":
+    main()
