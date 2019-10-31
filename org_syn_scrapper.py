@@ -135,7 +135,7 @@ class PdfDescription(object):
 
         :return: The generated path
         """
-        return f"{self.annual_volume}/{self.page}/{self.slug}.pdf"
+        return f"{self.annual_volume}/{self.page}_{self.slug}.pdf"
 
     def __repr__(self) -> str:
         """Generates a representation of the description in json.
@@ -709,7 +709,7 @@ class OrgSynScrapper(object):
         for link in links:
             directory = os.path.join(
                 dest_dir,
-                f"{link.annual_volume}/{link.page}"
+                link.annual_volume
             )
             directories.add(directory)
 
